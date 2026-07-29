@@ -1,0 +1,4 @@
+# Entorno virtual y artefactos de Python: no se versionan.
+.venv/
+__pycache__/
+*.py[cod]
