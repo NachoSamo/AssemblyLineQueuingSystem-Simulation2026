@@ -1,6 +1,7 @@
 import Tag from '../ui/Tag'
 import type { ParametrosSimulacion } from '../../types/simulacion'
-import { formatearEntero, formatearPorcentaje } from '../../utils/formato'
+import { NOMBRE_CRITERIO } from '../../utils/constantesDominio'
+import { formatearEntero, formatearPiezas, formatearPorcentaje } from '../../utils/formato'
 
 interface ResumenParametrosProps {
   parametros: ParametrosSimulacion
@@ -18,7 +19,15 @@ export default function ResumenParametros({ parametros }: ResumenParametrosProps
         Rango explorado: N={parametros.n_minimo} a N={parametros.n_maximo}
       </Tag>
       <Tag>Réplicas por N: {formatearEntero(parametros.replicas)}</Tag>
-      <Tag>Umbral de saturación: {formatearPorcentaje(parametros.umbral_utilizacion, 0)}</Tag>
+      <Tag tono="acento">Criterio: {NOMBRE_CRITERIO[parametros.criterio]}</Tag>
+      {/* Solo se muestra el parámetro del criterio que efectivamente se usó: los
+          otros viajan en la respuesta pero no influyeron en el resultado. */}
+      {parametros.criterio === 'maxima_produccion' && (
+        <Tag>Ganancia mínima: {formatearPiezas(parametros.ganancia_minima)} pzas</Tag>
+      )}
+      {parametros.criterio === 'umbral_manual' && (
+        <Tag>Umbral de saturación: {formatearPorcentaje(parametros.umbral_utilizacion, 0)}</Tag>
+      )}
       <Tag>Jornada: {formatearEntero(parametros.duracion_jornada)} min</Tag>
       <Tag>Semilla: {parametros.semilla}</Tag>
     </div>

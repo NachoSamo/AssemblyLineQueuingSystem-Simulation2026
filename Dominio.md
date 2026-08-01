@@ -129,15 +129,47 @@ Cada réplica corre desde Reloj = 0 hasta Reloj = 480 minutos. No hay período d
 Utilización(N) = promedio_R( tiempo_horno_ocupado / 480 )
 ```
 
-## 10. Criterio de determinación del N óptimo
+## 10. Criterios de determinación del N óptimo
 
-Se usa la **utilización del horno** como criterio principal, ya que el horno es el único recurso compartido y por lo tanto el cuello de botella natural del sistema.
+El objetivo de la sección 2 es **el mínimo N que maximice la producción de piezas terminadas**. El problema práctico es que la producción no tiene un máximo nítido: crece con N hasta que el horno se satura y después se aplana, y dentro de esa meseta las diferencias entre un N y otro son ruido estadístico. Buscar literalmente "el N con más piezas" da respuestas distintas según la semilla y según R — con R=30 el máximo puede caer en N=8 cuando la curva ya está plana desde N=6.
 
-- Se grafica: eje X = N (número de ensambladores), eje Y = Utilización promedio del horno (entre 0 y 1, o 0% y 100%).
-- A medida que N crece, la utilización sube (más ensambladores generan más pedidos al horno), hasta que el horno queda saturado y la utilización se aplana cerca de 100% (no puede superarlo, es una asíntota).
-- **N óptimo = el mínimo N a partir del cual la utilización promedio del horno alcanza o se estabiliza en un valor cercano al 100%.**
-- Dado que por variabilidad estocástica la utilización puede no llegar nunca exactamente a 100% aunque el horno esté saturado, se define un **umbral de tolerancia parametrizable** por debajo del cual se considera que el horno "ronda el 100%". Este umbral debe poder configurarse, en línea con el resto de los parámetros del modelo. **Valor por defecto: 94%** — ver la nota de la sección 10.1, que demuestra que la utilización tiene un techo alcanzable de ~0,948 y que un umbral del 95% dejaría al problema sin solución.
-- A partir de ese N, agregar más ensambladores no aumenta la utilización del horno (que ya está prácticamente saturado) y por lo tanto no aumenta la producción real — el excedente de ensambladores simplemente pasa más tiempo en cola esperando turno.
+Por eso el programa ofrece **tres criterios**, todos configurables desde la interfaz. Con los parámetros del enunciado los tres coinciden en **N = 6**, lo cual es una verificación cruzada valiosa: tres caminos independientes llegan al mismo resultado.
+
+### 10.a Máxima producción (criterio principal)
+
+Es la traducción operativa de la sección 2, y el criterio **por defecto**.
+
+- **N óptimo = el mínimo N tal que `Producción(N+1) − Producción(N) < ganancia mínima`.**
+- La *ganancia mínima* es parametrizable y expresa cuántas piezas por jornada tiene que aportar el ensamblador siguiente para justificar sumarlo. **Valor por defecto: 1 pieza.**
+- Se compara con el **promedio sin truncar**. Truncar cuantiza la diferencia y borraría la distinción entre una ganancia de 0,9 piezas y una de 0,04.
+- Se compara contra el vecino y no contra el máximo de la curva, porque el máximo es inestable frente al ruido y el vecino no.
+
+**Limitación que hay que conocer**: el último N del rango no tiene sucesor, así que no se puede evaluar. Con un rango 1–6 este criterio no devuelve óptimo aunque 6 sea la respuesta; hace falta simular al menos hasta 7. La interfaz lo informa explícitamente en vez de dar el rango por agotado.
+
+> **Precisión honesta sobre este criterio.** Formalmente responde *"a partir de qué N ya no conviene sumar otro ensamblador"*, que **no es idéntico** a *"qué N maximiza la producción"*. Con los parámetros del enunciado y una ganancia mínima de 1 pieza ambas preguntas tienen la misma respuesta (N = 6), y la producción truncada lo confirma: `floor(Producción(N))` vale 56 para todo N ≥ 6, de modo que 6 es efectivamente el mínimo N que alcanza la producción máxima entregable. Pero la equivalencia depende del modelo, no es una identidad general.
+
+### 10.b Máxima capacidad del horno
+
+Responde a "quiero exprimir el horno al máximo, sin importar cuántos ensambladores haga falta poner".
+
+- **N óptimo = el mínimo N cuya utilización alcanza el techo físico del sistema**, con una tolerancia de 0,5 puntos porcentuales.
+- El techo es el de la sección 10.1: `(480 − 25) / 480 ≈ 0,948`. **No** es el máximo observado dentro del rango simulado.
+
+> **Por qué contra el techo y no contra el máximo del rango.** Definido como "el mínimo N que alcanza la utilización más alta observada", este criterio **siempre encuentra un N**, incluso cuando la curva todavía está subiendo: con un rango 1–4 devolvería N = 4, donde el horno está al 76 % y no está saturado ni cerca. Comparar contra una constante física del modelo evita ese falso positivo — con el rango 1–4 el criterio correctamente informa que ningún N satura el horno.
+
+### 10.c Umbral de utilización manual
+
+Es el criterio histórico y se conserva para poder explorar a mano qué pasa con distintas exigencias.
+
+- **N óptimo = el mínimo N tal que `Utilización(N) ≥ umbral`.**
+- El umbral es parametrizable. **Valor por defecto: 94 %** — ver la nota de la sección 10.1, que demuestra que la utilización tiene un techo alcanzable de ~0,948 y que un umbral del 95 % dejaría al problema sin solución.
+- Su desventaja es justamente que la respuesta depende de que el usuario acierte un número: con 90 % da N = 5 y con 95 % no da ninguno.
+
+En los tres casos, a partir del N óptimo agregar más ensambladores no aumenta la producción real — el excedente simplemente pasa más tiempo en cola esperando turno de horno.
+
+### 10.d La producción real es un entero
+
+La producción promedio es un número con decimales porque promedia R jornadas distintas, pero **una jornada concreta entrega piezas enteras**. Un promedio de 56,33 piezas significa que se completan **56** piezas: la 57.ª queda a medio cocinar cuando la jornada corta en el minuto 480, y una pieza incompleta no se entrega (sección 8). La conclusión debe informar el valor truncado como resultado y el promedio como el estadístico que es.
 
 ### 10.1 Relación entre utilización y producción
 
@@ -182,8 +214,12 @@ Esto no invalida la relación `Producción(N) ≈ Utilización(N) × (480 / 8)`,
 
 Para poder ver el punto óptimo con claridad (y no solo inferirlo de una tabla de números), el programa debe generar **dos gráficos de línea/dispersión (XY)** en cada corrida (para el rango [N_mínimo, N_máximo] configurado):
 
-1. **Gráfico 1 — Utilización del horno**: eje X = N, eje Y = Utilización promedio del horno. Es el gráfico que se usa formalmente para decidir el N óptimo — el punto donde la curva se aplana cerca del umbral (sección 10).
-2. **Gráfico 2 — Piezas terminadas**: eje X = N, eje Y = Producción promedio de piezas terminadas. Sirve como verificación visual: por la relación de la sección 10.1, esta curva debería aplanarse en el mismo N (o muy cerca) que la del Gráfico 1. Si no coincide, es señal de revisar el modelo o de que hacen falta más réplicas.
+1. **Gráfico 1 — Piezas terminadas**: eje X = N, eje Y = Producción promedio de piezas terminadas. Va primero porque es **la magnitud que la sección 2 pide maximizar**, y es el gráfico que decide con el criterio principal (10.a): se busca dónde la curva deja de subir.
+2. **Gráfico 2 — Utilización del horno**: eje X = N, eje Y = Utilización promedio del horno. Explica *por qué* la producción se aplana donde se aplana: a partir del N óptimo el horno ya no tiene tiempo libre y pasa a ser el cuello de botella. Con los criterios 10.b y 10.c es este el gráfico que decide.
+
+Por la relación de la sección 10.1 las dos curvas deberían aplanarse en el mismo N (o muy cerca). Si no coincide, es señal de revisar el modelo o de que hacen falta más réplicas.
+
+La línea de referencia horizontal del Gráfico 2 debe ser **la que el criterio realmente usó**: el umbral configurado con el criterio 10.c, y el techo del sistema con los otros dos. Dibujar "Umbral 94 %" en una corrida decidida por producción daría a entender que ese número intervino en el resultado, y no fue así.
 
 Ambos gráficos deben regenerarse cada vez que se cambia el rango [N_mínimo, N_máximo]. Esto importa en la práctica: si se corre, por ejemplo, solo de N=1 a N=4 y el horno recién se satura en N=5, **ninguno de los dos gráficos va a mostrar el aplanamiento todavía** — van a parecer curvas siempre crecientes, y hay que ampliar el rango (a 1-6, 1-8, etc.) hasta ver claramente dónde se estabilizan.
 
@@ -209,9 +245,20 @@ Para cada N en [N_mínimo..N_máximo]:
     Calcular Utilización(N) = promedio de tiempo_horno_ocupado/480 entre las R réplicas
     Calcular Producción(N) = promedio de piezas terminadas entre las R réplicas
 
-Graficar N vs Utilización(N)      (Gráfico 1, sección 10.2)
-Graficar N vs Producción(N)       (Gráfico 2, sección 10.2)
-N óptimo = mínimo N tal que Utilización(N) ≥ umbral (ej. 95%)
+Graficar N vs Producción(N)       (Gráfico 1, sección 10.2)
+Graficar N vs Utilización(N)      (Gráfico 2, sección 10.2)
+
+Según el criterio elegido (sección 10):
+    a) Máxima producción     → N óptimo = mínimo N tal que
+                                 Producción(N+1) − Producción(N) < ganancia mínima
+    b) Capacidad del horno   → N óptimo = mínimo N tal que
+                                 Utilización(N) ≥ (480 − 25)/480 − 0,005
+    c) Umbral manual         → N óptimo = mínimo N tal que Utilización(N) ≥ umbral
+
+Si ningún N del rango cumple, no hay N óptimo: se informa el motivo y se pide
+ampliar el rango (sección 10.2), nunca se devuelve el mejor disponible.
+
+Producción entregable = truncar(Producción(N óptimo))    (sección 10.d)
 ```
 
 ## 12. Estadísticas de cómputo del programa

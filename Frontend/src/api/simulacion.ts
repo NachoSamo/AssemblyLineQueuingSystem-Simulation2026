@@ -1,5 +1,11 @@
 import { clienteApi } from './client'
-import type { SimulacionRequest, SimulacionResponse } from '../types/simulacion'
+import type {
+  ParametrosSimulacion,
+  SimulacionRequest,
+  SimulacionResponse,
+  VectorEstadoRequest,
+  VectorEstadoResponse,
+} from '../types/simulacion'
 import type { ParametrosFormulario } from '../types/formulario'
 
 /**
@@ -15,12 +21,47 @@ export async function ejecutarSimulacion(
     n_minimo: parametros.nMinimo,
     n_maximo: parametros.nMaximo,
     replicas: parametros.replicas,
+    criterio: parametros.criterio,
+    // Los dos parámetros de criterio viajan siempre, aunque el criterio elegido
+    // use solo uno: así el backend puede devolver la configuración completa y
+    // cambiar de modo no obliga a rearmar el cuerpo.
+    ganancia_minima: parametros.gananciaMinima,
     umbral_utilizacion: parametros.umbralUtilizacionPorcentaje / 100,
     semilla: parametros.semilla,
   }
 
   const { data } = await clienteApi.post<SimulacionResponse>(
     '/api/simulaciones',
+    cuerpo,
+    { signal },
+  )
+  return data
+}
+
+/**
+ * Trae el vector de estado de UNA réplica de la corrida que está en pantalla.
+ *
+ * Los datos de identificación salen de `parametros`, la respuesta de la corrida,
+ * y no del formulario: el backend reconstruye la jornada desde la semilla, así
+ * que pedirla con otros valores devolvería una simulación distinta de la que el
+ * usuario está mirando (Frontend.md §3).
+ */
+export async function obtenerVectorEstado(
+  parametros: ParametrosSimulacion,
+  n: number,
+  replica: number,
+  signal?: AbortSignal,
+): Promise<VectorEstadoResponse> {
+  const cuerpo: VectorEstadoRequest = {
+    semilla: parametros.semilla,
+    n_minimo: parametros.n_minimo,
+    replicas: parametros.replicas,
+    n,
+    replica,
+  }
+
+  const { data } = await clienteApi.post<VectorEstadoResponse>(
+    '/api/simulaciones/vector-estado',
     cuerpo,
     { signal },
   )

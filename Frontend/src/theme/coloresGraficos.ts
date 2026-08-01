@@ -1,7 +1,7 @@
 /**
  * Colores compartidos entre los gráficos de Recharts y la ilustración de la
  * pantalla de espera. Replican los tokens de `tailwind.config.js` (paletas
- * "horno" y "base") para que un solo lugar defina la paleta (Frontend.md §8).
+ * "horno" y "base") para que un solo lugar defina la paleta (Frontend.md §9).
  * Recharts no puede leer clases de Tailwind directamente, por eso viven
  * también como constantes hexadecimales acá.
  */

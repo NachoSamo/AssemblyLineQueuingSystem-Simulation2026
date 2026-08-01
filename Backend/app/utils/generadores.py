@@ -65,6 +65,25 @@ class FlujoAleatorio:
         return self._consumidos
 
 
+def uniforme_con_rnd(
+    minimo: float, maximo: float, rng: np.random.Generator | FlujoAleatorio
+) -> tuple[float, float]:
+    """Genera un valor uniforme y **además devuelve el RND que lo produjo**.
+
+    Existe para el vector de estado: la planilla del enunciado muestra, en cada fila, tanto
+    el RND sorteado como el tiempo que salió de él, así que el motor necesita las dos cosas
+    (`Backend.md` §4.8). Consume **exactamente un** RND, igual que `uniforme()`: el orden y
+    la cantidad de números aleatorios de una réplica no cambian según se trace o no.
+
+    :param minimo: extremo inferior del intervalo (a).
+    :param maximo: extremo superior del intervalo (b).
+    :param rng: fuente de aleatoriedad; cualquier objeto con `random() -> float`.
+    :return: tupla `(rnd, valor)`, con el RND en [0, 1) y el valor en la unidad del intervalo.
+    """
+    rnd = rng.random()
+    return rnd, minimo + rnd * (maximo - minimo)
+
+
 def uniforme(minimo: float, maximo: float, rng: np.random.Generator | FlujoAleatorio) -> float:
     """Genera un valor de una distribución uniforme continua en [minimo, maximo].
 
@@ -72,13 +91,17 @@ def uniforme(minimo: float, maximo: float, rng: np.random.Generator | FlujoAleat
 
         X = a + RND × (b − a)
 
+    Delega en `uniforme_con_rnd` y descarta el RND, para que exista **una sola** implementación
+    de la fórmula.
+
     :param minimo: extremo inferior del intervalo (a).
     :param maximo: extremo superior del intervalo (b).
     :param rng: fuente de aleatoriedad; cualquier objeto con `random() -> float`
         (un `numpy.random.Generator` o un `FlujoAleatorio`).
     :return: valor generado, en la misma unidad que `minimo` y `maximo`.
     """
-    return minimo + rng.random() * (maximo - minimo)
+    _, valor = uniforme_con_rnd(minimo, maximo, rng)
+    return valor
 
 
 def resolver_semilla(semilla: int | None) -> int:

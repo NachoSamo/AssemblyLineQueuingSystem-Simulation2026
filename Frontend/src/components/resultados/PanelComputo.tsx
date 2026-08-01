@@ -2,8 +2,8 @@ import type { EstadisticasComputo } from '../../types/simulacion'
 import {
   formatearDecimal,
   formatearMemoriaMb,
-  formatearPorcentajeEntero,
   formatearTiempoMs,
+  formatearUsoProcesador,
 } from '../../utils/formato'
 
 interface PanelComputoProps {
@@ -32,7 +32,7 @@ export default function PanelComputo({ estadisticas }: PanelComputoProps) {
         </li>
         <li>
           Uso de procesador:{' '}
-          <strong>{formatearPorcentajeEntero(estadisticas.cpu_porcentaje)}</strong>
+          <strong>{formatearUsoProcesador(estadisticas.cpu_porcentaje)}</strong>
         </li>
       </ul>
 

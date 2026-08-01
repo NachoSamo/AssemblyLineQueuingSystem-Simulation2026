@@ -1,10 +1,11 @@
+import type { UseFormRegisterReturn } from 'react-hook-form'
 import Ayuda from './Ayuda'
 
 interface CampoNumericoProps {
   id: string
   etiqueta: string
-  valor: number | ''
-  onCambiar: (valor: number | '') => void
+  /** Lo que devuelve `register(...)` de react-hook-form: se esparce sobre el input. */
+  registro: UseFormRegisterReturn
   min?: number
   max?: number
   paso?: number
@@ -15,12 +16,17 @@ interface CampoNumericoProps {
   placeholder?: string
 }
 
-/** Primitiva de formulario: no sabe qué representa el número, solo lo edita. */
+/**
+ * Primitiva de formulario: no sabe qué representa el número, solo lo edita.
+ *
+ * No maneja su propio estado: recibe el `registro` de react-hook-form y lo
+ * esparce sobre el `<input>`. Así la validación en vivo (Frontend.md §5.4) vive
+ * en un solo lado y este componente sigue siendo presentacional.
+ */
 export default function CampoNumerico({
   id,
   etiqueta,
-  valor,
-  onCambiar,
+  registro,
   min,
   max,
   paso = 1,
@@ -45,25 +51,14 @@ export default function CampoNumerico({
       </div>
       <div className="relative mt-1.5">
         <input
+          {...registro}
           id={id}
           type="number"
           inputMode="numeric"
-          value={valor}
           min={min}
           max={max}
           step={paso}
           placeholder={placeholder}
-          onChange={(evento) => {
-            const texto = evento.target.value
-            if (texto === '') {
-              onCambiar('')
-              return
-            }
-            const numero = Number(texto)
-            if (!Number.isNaN(numero)) {
-              onCambiar(numero)
-            }
-          }}
           aria-invalid={Boolean(error)}
           aria-describedby={error ? idError : undefined}
           className={`w-full rounded-md border px-3 py-2 text-sm text-base-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-horno-400 ${

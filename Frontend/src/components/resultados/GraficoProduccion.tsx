@@ -9,12 +9,27 @@ import {
   YAxis,
 } from 'recharts'
 import Tarjeta from '../ui/Tarjeta'
-import type { ResultadoPorN } from '../../types/simulacion'
+import type { CriterioNOptimo, ResultadoPorN } from '../../types/simulacion'
 import { COLOR_EJE, COLOR_PRODUCCION, COLOR_REJILLA } from '../../theme/coloresGraficos'
 
 interface GraficoProduccionProps {
   resultadosPorN: ResultadoPorN[]
   nOptimo: number | null
+  criterio: CriterioNOptimo
+}
+
+/**
+ * El subtítulo dice qué papel juega este gráfico, y eso depende del criterio:
+ * con máxima producción es el que decide; con los otros dos, la verificación de
+ * que la producción se aplana donde el horno se satura (Dominio.md §10.1).
+ */
+const SUBTITULO: Record<CriterioNOptimo, string> = {
+  maxima_produccion:
+    'Es el gráfico que define el N óptimo: se busca dónde la curva deja de subir.',
+  capacidad_horno:
+    'Verificación: la producción debería aplanarse en el mismo N en que se satura el horno.',
+  umbral_manual:
+    'Verificación: la producción debería aplanarse en el mismo N en que se satura el horno.',
 }
 
 interface PuntoProduccion {
@@ -23,11 +38,15 @@ interface PuntoProduccion {
 }
 
 /**
- * Gráfico 2 (Dominio.md §10.2): verificación visual. Debería aplanarse en
- * el mismo N que el gráfico de utilización (Dominio.md §10.1). Un único
- * eje Y, separado del gráfico anterior — nunca combinados con doble eje.
+ * Gráfico 1 (Dominio.md §10.2): la producción de piezas, que es la magnitud
+ * que el enunciado pide maximizar (§2). Va primero por eso. Un único eje Y,
+ * separado del otro gráfico — nunca combinados con doble eje.
  */
-export default function GraficoProduccion({ resultadosPorN, nOptimo }: GraficoProduccionProps) {
+export default function GraficoProduccion({
+  resultadosPorN,
+  nOptimo,
+  criterio,
+}: GraficoProduccionProps) {
   const datos: PuntoProduccion[] = resultadosPorN.map((r) => ({
     n: r.n,
     piezasPromedio: r.piezas_promedio,
@@ -37,9 +56,7 @@ export default function GraficoProduccion({ resultadosPorN, nOptimo }: GraficoPr
   return (
     <Tarjeta>
       <h3 className="text-lg font-semibold text-base-900">Piezas terminadas</h3>
-      <p className="mt-1 text-sm text-base-500">
-        Verificación: debería aplanarse en el mismo N que el gráfico anterior.
-      </p>
+      <p className="mt-1 text-sm text-base-500">{SUBTITULO[criterio]}</p>
       <div className="mt-4 h-80 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={datos} margin={{ top: 24, right: 36, left: 4, bottom: 20 }}>

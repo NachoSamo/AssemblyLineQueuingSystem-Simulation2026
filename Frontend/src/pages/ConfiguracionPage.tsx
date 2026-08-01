@@ -1,12 +1,14 @@
-import { useState } from 'react'
-import type { FormEvent } from 'react'
+import { useEffect } from 'react'
+import { useForm, useWatch } from 'react-hook-form'
 import { AlertCircle, Play } from 'lucide-react'
 import Tarjeta from '../components/ui/Tarjeta'
 import CampoNumerico from '../components/ui/CampoNumerico'
+import CampoRadio from '../components/ui/CampoRadio'
 import Boton from '../components/ui/Boton'
+import FichaDistribucion from '../components/configuracion/FichaDistribucion'
 import type { ParametrosFormulario } from '../types/formulario'
-import type { ErrorApi, ParametrosSimulacion } from '../types/simulacion'
-import { DATOS_FIJOS_POR_DEFECTO } from '../utils/constantesDominio'
+import type { CriterioNOptimo, ErrorApi, ParametrosSimulacion } from '../types/simulacion'
+import { CRITERIOS, DATOS_FIJOS_POR_DEFECTO } from '../utils/constantesDominio'
 
 interface ConfiguracionPageProps {
   valoresIniciales: ParametrosFormulario
@@ -19,76 +21,42 @@ interface ConfiguracionPageProps {
   onIniciar: (parametros: ParametrosFormulario) => void
 }
 
-/** Estado local del formulario: cada número puede estar vacío mientras se edita. */
-interface EstadoFormulario {
-  nMinimo: number | ''
-  nMaximo: number | ''
-  replicas: number | ''
-  umbralUtilizacionPorcentaje: number | ''
-  semilla: number | ''
+/**
+ * Estado del formulario. La semilla es `number | null` porque es opcional;
+ * el resto son números y react-hook-form los convierte con `valueAsNumber`.
+ */
+interface CamposFormulario {
+  nMinimo: number
+  nMaximo: number
+  replicas: number
+  criterio: CriterioNOptimo
+  gananciaMinima: number
+  umbralUtilizacionPorcentaje: number
+  /** `undefined` cuando está vacío: es opcional y el backend genera una si no viaja. */
+  semilla?: number
 }
 
-type Errores = Partial<Record<keyof EstadoFormulario, string>>
-
-function aEstadoFormulario(valores: ParametrosFormulario): EstadoFormulario {
-  return {
-    nMinimo: valores.nMinimo,
-    nMaximo: valores.nMaximo,
-    replicas: valores.replicas,
-    umbralUtilizacionPorcentaje: valores.umbralUtilizacionPorcentaje,
-    semilla: valores.semilla ?? '',
-  }
+/** Un campo numérico vacío llega como `NaN` con `valueAsNumber`. */
+function esNumero(valor: unknown): valor is number {
+  return typeof valor === 'number' && !Number.isNaN(valor)
 }
 
-function validar(form: EstadoFormulario): Errores {
-  const errores: Errores = {}
-
-  if (form.nMinimo === '' || form.nMinimo < 1) {
-    errores.nMinimo = 'Tiene que ser un entero mayor o igual a 1.'
-  }
-  if (form.nMaximo === '' || form.nMinimo === '' || form.nMaximo < form.nMinimo) {
-    errores.nMaximo = 'Tiene que ser mayor o igual a N mínimo.'
-  }
-  if (form.replicas === '' || form.replicas < 1) {
-    errores.replicas = 'Tiene que ser un entero mayor o igual a 1.'
-  }
-  if (
-    form.umbralUtilizacionPorcentaje === '' ||
-    form.umbralUtilizacionPorcentaje < 1 ||
-    form.umbralUtilizacionPorcentaje > 100
-  ) {
-    errores.umbralUtilizacionPorcentaje = 'Tiene que estar entre 1 y 100.'
-  }
-  if (form.semilla !== '' && !Number.isInteger(form.semilla)) {
-    errores.semilla = 'Tiene que ser un número entero.'
-  }
-
-  return errores
-}
-
-/** Solo se llama cuando `validar` no encontró errores: todos los campos numéricos ya están completos. */
-function aParametrosFormulario(form: EstadoFormulario): ParametrosFormulario | null {
-  if (
-    form.nMinimo === '' ||
-    form.nMaximo === '' ||
-    form.replicas === '' ||
-    form.umbralUtilizacionPorcentaje === ''
-  ) {
-    return null
-  }
-  return {
-    nMinimo: form.nMinimo,
-    nMaximo: form.nMaximo,
-    replicas: form.replicas,
-    umbralUtilizacionPorcentaje: form.umbralUtilizacionPorcentaje,
-    semilla: form.semilla === '' ? null : form.semilla,
-  }
+function entero(valor: unknown, minimo: number): string | true {
+  if (!esNumero(valor)) return 'Completá este campo con un número.'
+  if (!Number.isInteger(valor)) return 'Tiene que ser un número entero.'
+  if (valor < minimo) return `Tiene que ser mayor o igual a ${minimo}.`
+  return true
 }
 
 /**
- * Pantalla 1: formulario de parámetros (Frontend.md §5). La validación de
- * acá es solo para respuesta inmediata; la validación real es la del
- * backend, y sus mensajes se muestran tal cual llegan.
+ * Pantalla 1: formulario de parámetros (Frontend.md §5).
+ *
+ * La validación es en vivo con react-hook-form en modo `onTouched`: no molesta
+ * mientras se escribe por primera vez, pero una vez que un campo dio error se
+ * revalida en cada tecla, así corregirlo limpia el mensaje al instante.
+ *
+ * La validación del backend sigue siendo la real: la de acá es solo para dar
+ * respuesta inmediata, y los mensajes del servidor se muestran tal cual llegan.
  */
 export default function ConfiguracionPage({
   valoresIniciales,
@@ -96,25 +64,54 @@ export default function ConfiguracionPage({
   error,
   onIniciar,
 }: ConfiguracionPageProps) {
-  const [form, setForm] = useState<EstadoFormulario>(() => aEstadoFormulario(valoresIniciales))
-  const [errores, setErrores] = useState<Errores>({})
+  const {
+    register,
+    handleSubmit,
+    control,
+    setValue,
+    trigger,
+    getValues,
+    formState: { errors },
+  } = useForm<CamposFormulario>({
+    mode: 'onTouched',
+    defaultValues: {
+      ...valoresIniciales,
+      // `null` dejaría el input con el texto "null"; `undefined` lo deja vacío.
+      semilla: valoresIniciales.semilla ?? undefined,
+    },
+  })
+
+  // `useWatch` y no `watch`: devuelve el valor en vez de una función, así el
+  // React Compiler puede memoizar el componente (la regla
+  // react-hooks/incompatible-library avisa si se usa `watch`).
+  const criterio = useWatch({ control, name: 'criterio' })
+  const nMinimo = useWatch({ control, name: 'nMinimo' })
+
+  // `nMaximo >= nMinimo` es una validación cruzada: si cambia el mínimo, el
+  // error del máximo puede haber quedado obsoleto en cualquiera de los dos
+  // sentidos, así que se vuelve a evaluar.
+  useEffect(() => {
+    if (getValues('nMaximo') !== undefined) {
+      void trigger('nMaximo')
+    }
+  }, [nMinimo, trigger, getValues])
 
   const datosFijos = datosFijosPrevios ?? DATOS_FIJOS_POR_DEFECTO
 
-  function manejarEnvio(evento: FormEvent<HTMLFormElement>) {
-    evento.preventDefault()
-    const erroresEncontrados = validar(form)
-    setErrores(erroresEncontrados)
-    if (Object.keys(erroresEncontrados).length === 0) {
-      const parametros = aParametrosFormulario(form)
-      if (parametros) {
-        onIniciar(parametros)
-      }
-    }
+  function enviar(campos: CamposFormulario) {
+    onIniciar({
+      nMinimo: campos.nMinimo,
+      nMaximo: campos.nMaximo,
+      replicas: campos.replicas,
+      criterio: campos.criterio,
+      gananciaMinima: campos.gananciaMinima,
+      umbralUtilizacionPorcentaje: campos.umbralUtilizacionPorcentaje,
+      semilla: esNumero(campos.semilla) ? campos.semilla : null,
+    })
   }
 
   return (
-    <form onSubmit={manejarEnvio} className="space-y-6">
+    <form onSubmit={handleSubmit(enviar)} className="space-y-6" noValidate>
       <div>
         <h1 className="text-2xl font-bold text-base-900">
           Simulación: horno compartido por ensambladores
@@ -139,50 +136,117 @@ export default function ConfiguracionPage({
         <div className="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2">
           <CampoNumerico
             id="n-minimo"
-            etiqueta="N mínimo"
-            valor={form.nMinimo}
-            onCambiar={(valor) => setForm((f) => ({ ...f, nMinimo: valor }))}
+            etiqueta="N mínimo de ensambladores a simular"
+            registro={register('nMinimo', {
+              valueAsNumber: true,
+              validate: (valor) => entero(valor, 1),
+            })}
             min={1}
-            ayuda="Rango de cantidades de ensambladores a probar. Si los resultados no se aplanan, ampliá el máximo."
-            error={errores.nMinimo}
+            ayuda="Cantidad mínima de ensambladores a simular."
+            error={errors.nMinimo?.message}
           />
           <CampoNumerico
             id="n-maximo"
-            etiqueta="N máximo"
-            valor={form.nMaximo}
-            onCambiar={(valor) => setForm((f) => ({ ...f, nMaximo: valor }))}
-            min={form.nMinimo === '' ? 1 : form.nMinimo}
-            ayuda="Rango de cantidades de ensambladores a probar. Si los resultados no se aplanan, ampliá el máximo."
-            error={errores.nMaximo}
+            etiqueta="N máximo de ensambladores a simular"
+            registro={register('nMaximo', {
+              valueAsNumber: true,
+              validate: (valor) => {
+                const base = entero(valor, 1)
+                if (base !== true) return base
+                const minimo = getValues('nMinimo')
+                if (esNumero(minimo) && valor < minimo) {
+                  return 'Tiene que ser mayor o igual a N mínimo.'
+                }
+                return true
+              },
+            })}
+            min={1}
+            ayuda="Cantidad máxima de ensambladores a simular. Conviene que supere al óptimo esperado: el criterio de máxima producción compara cada N con el siguiente, así que el último del rango no se puede evaluar."
+            error={errors.nMaximo?.message}
           />
           <CampoNumerico
             id="replicas"
-            etiqueta="Réplicas por N (R)"
-            valor={form.replicas}
-            onCambiar={(valor) => setForm((f) => ({ ...f, replicas: valor }))}
+            etiqueta="Cantidad de filas por N (R)"
+            registro={register('replicas', {
+              valueAsNumber: true,
+              validate: (valor) => entero(valor, 1),
+            })}
             min={1}
-            ayuda="Cuántas jornadas de 8 horas se simulan para cada N. Como los tiempos son al azar, un solo día puede dar un resultado atípico; por eso se promedian R días. Más réplicas = resultado más confiable."
-            error={errores.replicas}
-          />
-          <CampoNumerico
-            id="umbral"
-            etiqueta="Umbral de utilización"
-            valor={form.umbralUtilizacionPorcentaje}
-            onCambiar={(valor) => setForm((f) => ({ ...f, umbralUtilizacionPorcentaje: valor }))}
-            min={1}
-            max={100}
-            sufijo="%"
-            ayuda="A partir de qué nivel de uso se considera que el horno está saturado. Por defecto 95 %."
-            error={errores.umbralUtilizacionPorcentaje}
+            ayuda="Cuántas filas/jornadas de 8 horas se simulan para cada N. Como los tiempos son al azar, un solo día puede dar un resultado atípico; por eso se promedian R días. Más réplicas = resultado más confiable."
+            error={errors.replicas?.message}
           />
           <CampoNumerico
             id="semilla"
             etiqueta="Semilla"
-            valor={form.semilla}
-            onCambiar={(valor) => setForm((f) => ({ ...f, semilla: valor }))}
+            registro={register('semilla', { valueAsNumber: true })}
             opcional
             ayuda="Repetir la misma semilla devuelve exactamente los mismos resultados. Útil para volver a mostrar una corrida en la defensa. Si la dejás vacía, se usa una al azar."
-            error={errores.semilla}
+            error={errors.semilla?.message}
+          />
+        </div>
+      </Tarjeta>
+
+      <Tarjeta>
+        <h2 className="text-base font-semibold text-base-900">
+          Criterio para elegir el N óptimo
+        </h2>
+        <p className="mt-1 text-sm text-base-500">
+          Qué se considera "óptimo". Con los parámetros del enunciado los tres criterios
+          coinciden, lo que es una buena señal: se llega a la misma respuesta por caminos
+          distintos.
+        </p>
+        <div className="mt-4">
+          <CampoRadio
+            nombre="criterio"
+            leyenda="Criterio"
+            opciones={CRITERIOS}
+            valor={criterio}
+            onCambiar={(valor) => setValue('criterio', valor, { shouldValidate: true })}
+            detalle={(valor) =>
+              valor === 'maxima_produccion' ? (
+                <div className="max-w-xs">
+                  <CampoNumerico
+                    id="ganancia-minima"
+                    etiqueta="Ganancia mínima"
+                    registro={register('gananciaMinima', {
+                      valueAsNumber: true,
+                      validate: (v) =>
+                        !esNumero(v)
+                          ? 'Completá este campo con un número.'
+                          : v <= 0
+                            ? 'Tiene que ser mayor que 0.'
+                            : true,
+                    })}
+                    min={0.1}
+                    paso={0.1}
+                    sufijo="pzas"
+                    ayuda="Cuántas piezas más por jornada tiene que aportar el ensamblador siguiente para que valga la pena sumarlo. Por debajo de eso se considera que la producción se aplanó."
+                    error={errors.gananciaMinima?.message}
+                  />
+                </div>
+              ) : valor === 'umbral_manual' ? (
+                <div className="max-w-xs">
+                  <CampoNumerico
+                    id="umbral"
+                    etiqueta="Umbral de utilización"
+                    registro={register('umbralUtilizacionPorcentaje', {
+                      valueAsNumber: true,
+                      validate: (v) =>
+                        !esNumero(v)
+                          ? 'Completá este campo con un número.'
+                          : v < 1 || v > 100
+                            ? 'Tiene que estar entre 1 y 100.'
+                            : true,
+                    })}
+                    min={1}
+                    max={100}
+                    sufijo="%"
+                    ayuda="A partir de qué nivel de uso se considera que el horno está saturado. Por defecto 94 %, que es prácticamente el máximo que este sistema puede alcanzar: por encima de 94,8 % ningún N califica nunca."
+                    error={errors.umbralUtilizacionPorcentaje?.message}
+                  />
+                </div>
+              ) : null
+            }
           />
         </div>
       </Tarjeta>
@@ -190,33 +254,35 @@ export default function ConfiguracionPage({
       <Tarjeta className="border-dashed bg-base-50">
         <h2 className="text-base font-semibold text-base-900">Datos fijos del enunciado</h2>
         <p className="mt-1 text-sm text-base-500">
-          No son configurables: son parte del problema, y en particular los 480 minutos
-          de jornada son la condición que hace comparables los resultados entre
-          distintos N.
+          No son configurables: son parte del problema, y en particular los{' '}
+          {datosFijos.duracion_jornada} minutos de jornada son la condición que hace
+          comparables los resultados entre distintos N.
         </p>
-        <dl className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
-          <div>
-            <dt className="text-base-500">Duración de la jornada</dt>
-            <dd className="font-medium text-base-800">{datosFijos.duracion_jornada} minutos</dd>
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="rounded-lg border border-base-200 bg-white px-4 py-3">
+            <p className="text-sm font-semibold text-base-900">Duración de la jornada</p>
+            <p className="mt-1 font-mono text-sm text-horno-600">
+              {datosFijos.duracion_jornada} minutos
+            </p>
+            <p className="mt-0.5 font-mono text-xs text-base-500">Constante (8 horas)</p>
+            <p className="mt-3 text-xs text-base-600">
+              No es aleatoria: todas las jornadas duran exactamente lo mismo, para cualquier N.
+            </p>
           </div>
-          <div>
-            <dt className="text-base-500">Tiempo de ensamble</dt>
-            <dd className="font-medium text-base-800">
-              {datosFijos.tiempo_ensamble.minimo} a {datosFijos.tiempo_ensamble.maximo} min
-              (uniforme)
-            </dd>
-          </div>
-          <div>
-            <dt className="text-base-500">Tiempo de cocción</dt>
-            <dd className="font-medium text-base-800">
-              {datosFijos.tiempo_coccion.minimo} a {datosFijos.tiempo_coccion.maximo} min
-              (uniforme)
-            </dd>
-          </div>
-        </dl>
+          <FichaDistribucion titulo="Tiempo de ensamble" rango={datosFijos.tiempo_ensamble} />
+          <FichaDistribucion titulo="Tiempo de cocción" rango={datosFijos.tiempo_coccion} />
+        </div>
+        <p className="mt-3 text-xs text-base-500">
+          RND es un número al azar entre 0 y 1. La fórmula{' '}
+          <span className="font-mono">X = a + RND × (b − a)</span> lo convierte en un tiempo
+          dentro del intervalo.
+        </p>
       </Tarjeta>
 
       <div className="flex justify-end">
+        {/* No se deshabilita con `isValid`: si por cualquier motivo la validación
+            no corriera, el formulario quedaría trabado sin explicación.
+            `handleSubmit` ya bloquea el envío y marca los campos con error. */}
         <Boton tipo="submit" icono={<Play size={16} aria-hidden="true" />}>
           Iniciar simulación
         </Boton>

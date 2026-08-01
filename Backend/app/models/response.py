@@ -1,9 +1,10 @@
-"""Esquemas de salida de `POST /api/simulaciones`.
+"""Esquemas de salida de los endpoints de simulación.
 
-Qué hace: define `SimulacionResponse` y todos sus modelos anidados (`ParametrosCorrida`,
-`RangoTiempo`, `ResultadoPorN`, `TiempoPorN`, `EstadisticasComputo`).
-Corresponde a: `Backend.md` §3.1 (contrato de la respuesta), `Dominio.md` §9-10
-(resultados por N y N óptimo) y §12 (estadísticas de cómputo).
+Qué hace: define `SimulacionResponse` y sus modelos anidados (`ParametrosCorrida`,
+`RangoTiempo`, `ResultadoPorN`, `TiempoPorN`, `EstadisticasComputo`), y `VectorEstadoResponse`
+con los suyos (`FilaVectorEstado`, `ColumnaEnsamblador`).
+Corresponde a: `Backend.md` §3.1 (contrato de la respuesta), §3.2 (vector de estado),
+`Dominio.md` §9-10 (resultados por N y N óptimo) y §12 (estadísticas de cómputo).
 Qué NO le corresponde: no tiene lógica de simulación ni formatea nada para el usuario.
 El backend devuelve **números crudos con la unidad en el nombre del campo**; las frases
 legibles las arma el frontend.
@@ -38,6 +39,19 @@ class ParametrosCorrida(BaseModel):
     n_minimo: int = Field(description="Primer N del barrido.")
     n_maximo: int = Field(description="Último N del barrido.")
     replicas: int = Field(description="Jornadas simuladas por cada N (R).")
+    criterio: str = Field(
+        description=(
+            'Criterio con el que se eligió el N óptimo: "maxima_produccion", '
+            '"capacidad_horno" o "umbral_manual". El frontend lo usa para redactar la '
+            "conclusión y para saber cuál de los dos gráficos fue el que decidió."
+        )
+    )
+    ganancia_minima: float = Field(
+        description=(
+            "Piezas mínimas exigidas al N siguiente. Solo tiene sentido si el criterio "
+            "es maxima_produccion; viaja siempre para poder mostrar la configuración completa."
+        )
+    )
     umbral_utilizacion: float = Field(description="Umbral de saturación, como fracción.")
     semilla: int = Field(
         description=(
@@ -115,14 +129,14 @@ class SimulacionResponse(BaseModel):
     )
     n_optimo: int | None = Field(
         description=(
-            "Mínimo N cuya utilización promedio alcanza el umbral (§10). "
-            "Es nulo si ningún N del rango lo alcanza."
+            "N óptimo según el criterio elegido (§10). Es nulo si ningún N del rango lo "
+            "satisface."
         )
     )
-    alcanzo_umbral: bool = Field(
+    alcanzo_criterio: bool = Field(
         description=(
-            "Falso cuando ningún N del rango llegó al umbral; el frontend muestra el aviso "
-            "de ampliar el rango en vez de una conclusión falsa (§10.2)."
+            "Falso cuando ningún N del rango satisface el criterio; el frontend muestra el "
+            "aviso correspondiente en vez de una conclusión falsa (§10.2)."
         )
     )
     utilizacion_n_optimo: float | None = Field(
@@ -131,8 +145,104 @@ class SimulacionResponse(BaseModel):
     piezas_n_optimo: float | None = Field(
         description="Piezas promedio del N óptimo. Nulo si no hay N óptimo."
     )
+    piezas_n_optimo_truncadas: int | None = Field(
+        description=(
+            "Producción **real** del N óptimo: el promedio truncado. Una jornada que produce "
+            "56,33 piezas en promedio entrega 56 piezas completas — la 57.ª queda a medio "
+            "cocinar cuando termina la jornada (§8). Nulo si no hay N óptimo."
+        )
+    )
+    ganancia_n_optimo: float | None = Field(
+        description=(
+            "Piezas que aportaría pasar del N óptimo al siguiente. Es el número que justifica "
+            "el corte en la conclusión. Nulo si no hay N óptimo o si este es el último del "
+            "rango (no hay sucesor con qué comparar)."
+        )
+    )
+    utilizacion_maxima_rango: float = Field(
+        description=(
+            "Mayor utilización observada en todo el rango, como fracción. Sirve para explicar "
+            "cuán lejos quedó el horno de saturarse cuando ningún N alcanza el criterio."
+        )
+    )
     estadisticas_computo: EstadisticasComputo = Field(
         description="Métricas de desempeño del programa (§12)."
+    )
+
+
+class ColumnaEnsamblador(BaseModel):
+    """Las cuatro columnas que la planilla dedica a un ensamblador en una fila.
+
+    `rnd` y `tiempo` valen `null` en las filas donde ese ensamblador no sorteó nada.
+    `fin_ensamble` es una columna de la lista de eventos futuros: **persiste** fila a fila
+    mientras el ensamblador ensambla, y vale `null` cuando está esperando.
+    """
+
+    rnd: float | None = Field(description="RND sorteado en esta fila, entre 0 y 1. Nulo si no sorteó.")
+    tiempo: float | None = Field(description="Tiempo de ensamble que salió del RND, en minutos.")
+    fin_ensamble: float | None = Field(
+        description="Minuto en que termina el ensamble en curso. Nulo si el ensamblador espera."
+    )
+    estado: str = Field(description='"Ensamblando" o "Esperando" (`Dominio.md` §5.1).')
+
+
+class FilaVectorEstado(BaseModel):
+    """Una fila del vector de estado: **un evento** del bucle, no una réplica.
+
+    Reproduce las columnas de `Ejercicio 135 Final Planteo.ods`. La planilla está trazada con
+    N=1; para N>1 el bloque de ensamble se repite por ensamblador (`Backend.md` §4.9).
+    """
+
+    replica: int = Field(description="Réplica a la que pertenece la fila (R), empezando en 1.")
+    iteracion: int = Field(
+        description="Número de fila dentro de la réplica. La inicialización es la 0."
+    )
+    evento: str = Field(
+        description='Evento ejecutado: "Inicialización", "Fin Ensamble i", "Fin Cocción" '
+        'o "Fin de la jornada".'
+    )
+    reloj: float = Field(description="Minuto de la jornada en que ocurrió, entre 0 y 480.")
+    ensambladores: list[ColumnaEnsamblador] = Field(
+        description="Una entrada por ensamblador, en orden 1..N. Siempre tiene N elementos."
+    )
+    rnd_coccion: float | None = Field(description="RND sorteado para la cocción en esta fila.")
+    tiempo_coccion: float | None = Field(
+        description="Tiempo de cocción que salió de ese RND, en minutos."
+    )
+    fin_coccion: float | None = Field(
+        description="Minuto en que termina la cocción en curso. Nulo si el horno está libre."
+    )
+    horno_estado: str = Field(description='"Libre" u "Ocupado" (`Dominio.md` §5.2).')
+    cola: int = Field(description="Cantidad de piezas esperando turno de horno.")
+    piezas_terminadas: int = Field(description="Contador acumulado de piezas que salieron.")
+    piezas: list[str] = Field(
+        description=(
+            "Estado de cada pieza creada hasta esta fila, en orden de creación. La lista "
+            "**crece** a lo largo de la jornada: la pieza k aparece recién cuando nace."
+        )
+    )
+
+
+class VectorEstadoResponse(BaseModel):
+    """Vector de estado completo de una réplica (`Backend.md` §3.2).
+
+    Se devuelven **todas** las filas de la réplica de una sola vez: son alrededor de cien, y
+    paginarlas es responsabilidad del frontend. Lo que no se devuelve nunca es el vector de
+    todas las réplicas de todos los N a la vez.
+    """
+
+    n: int = Field(description="Cantidad de ensambladores de la réplica inspeccionada.")
+    replica: int = Field(description="Número de réplica inspeccionada, empezando en 1.")
+    total_replicas: int = Field(
+        description="R de la corrida, para que el frontend arme el selector de réplicas."
+    )
+    total_piezas: int = Field(
+        description="Cantidad de piezas creadas en la jornada; es el largo de la columna "
+        "`piezas` en la última fila y determina cuántas columnas de pieza dibujar."
+    )
+    total_filas: int = Field(description="Cantidad de filas del vector de estado.")
+    filas: list[FilaVectorEstado] = Field(
+        description="Filas en orden cronológico, de la inicialización al corte en 480."
     )
 
 

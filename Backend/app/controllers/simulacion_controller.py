@@ -1,13 +1,13 @@
 """Endpoints HTTP de la simulación.
 
-Qué hace: define el `APIRouter` con `POST /simulaciones` y `GET /salud` (se montan bajo
-`/api`), recibe el request ya validado por Pydantic, llama al servicio de experimento y
-devuelve el modelo de respuesta. Traduce los errores de validación y los inesperados a los
-códigos y cuerpos del contrato.
+Qué hace: define el `APIRouter` con `POST /simulaciones`, `POST /simulaciones/vector-estado` y
+`GET /salud` (se montan bajo `/api`), recibe el request ya validado por Pydantic, llama al
+servicio correspondiente y devuelve el modelo de respuesta. Traduce los errores de validación
+y los inesperados a los códigos y cuerpos del contrato.
 Corresponde a: `Backend.md` §3 (contrato de la API).
 Qué NO le corresponde: **no contiene una sola línea de lógica de simulación**. No sabe qué
-es un reloj, un evento ni una réplica; solo sabe llamar a `experimento_service` y devolver
-lo que le da.
+es un reloj, un evento ni una réplica; solo sabe llamar a `experimento_service` o a
+`vector_estado_service` y devolver lo que le dan.
 """
 
 from __future__ import annotations
@@ -16,9 +16,15 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from ..models.request import SimulacionRequest
-from ..models.response import ErrorResponse, SaludResponse, SimulacionResponse
+from ..models.request import SimulacionRequest, VectorEstadoRequest
+from ..models.response import (
+    ErrorResponse,
+    SaludResponse,
+    SimulacionResponse,
+    VectorEstadoResponse,
+)
 from ..services.experimento_service import ejecutar_experimento
+from ..services.vector_estado_service import obtener_vector_estado
 
 router = APIRouter(tags=["simulación"])
 
@@ -28,7 +34,11 @@ ETIQUETAS_CAMPOS: dict[str, str] = {
     "n_maximo": "N máximo",
     "replicas": "cantidad de réplicas",
     "umbral_utilizacion": "umbral de utilización",
+    "criterio": "el criterio del N óptimo",
+    "ganancia_minima": "la ganancia mínima",
     "semilla": "semilla",
+    "n": "la cantidad de ensambladores",
+    "replica": "la réplica",
 }
 
 #: Mensaje del error 500 del contrato (`Backend.md` §3.1).
@@ -62,6 +72,8 @@ def crear_simulacion(peticion: SimulacionRequest) -> SimulacionResponse:
             replicas=peticion.replicas,
             umbral_utilizacion=peticion.umbral_utilizacion,
             semilla=peticion.semilla,
+            criterio=peticion.criterio,
+            ganancia_minima=peticion.ganancia_minima,
         )
     except Exception as error:  # noqa: BLE001 - se traduce a un 500 del contrato
         raise HTTPException(
@@ -70,6 +82,45 @@ def crear_simulacion(peticion: SimulacionRequest) -> SimulacionResponse:
         ) from error
 
     return SimulacionResponse.model_validate(resultado)
+
+
+@router.post(
+    "/simulaciones/vector-estado",
+    response_model=VectorEstadoResponse,
+    summary="Vector de estado de una réplica puntual",
+    description=(
+        "Devuelve la tabla fila-por-evento de **una** jornada simulada, para poder mostrar en "
+        "pantalla el vector de estado del enunciado. No guarda estado en el servidor: "
+        "reconstruye la réplica a partir de la semilla de la corrida, así que hay que pedirla "
+        "con los mismos `semilla`, `n_minimo` y `replicas` que devolvió `POST /api/simulaciones`."
+    ),
+    responses={
+        422: {"model": ErrorResponse, "description": "Parámetros inválidos"},
+        500: {"model": ErrorResponse, "description": "Error inesperado"},
+    },
+)
+def crear_vector_estado(peticion: VectorEstadoRequest) -> VectorEstadoResponse:
+    """Reconstruye y devuelve el vector de estado de la réplica pedida.
+
+    :param peticion: identificación de la réplica, ya validada por Pydantic.
+    :return: filas del vector de estado más los totales para paginar.
+    :raises HTTPException: `500` si la reconstrucción falla de forma inesperada.
+    """
+    try:
+        resultado = obtener_vector_estado(
+            semilla=peticion.semilla,
+            n_minimo=peticion.n_minimo,
+            replicas=peticion.replicas,
+            n=peticion.n,
+            replica=peticion.replica,
+        )
+    except Exception as error:  # noqa: BLE001 - se traduce a un 500 del contrato
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=MENSAJE_ERROR_INESPERADO,
+        ) from error
+
+    return VectorEstadoResponse.model_validate(resultado)
 
 
 @router.get(

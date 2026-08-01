@@ -3,7 +3,7 @@ import type { AxiosError } from 'axios'
 import type { ErrorApi } from '../types/simulacion'
 
 /**
- * Instancia única de axios (Frontend.md §9). Timeout generoso porque con R
+ * Instancia única de axios (Frontend.md §10). Timeout generoso porque con R
  * alto la corrida puede tardar de verdad, aunque el caso típico responda
  * en milisegundos.
  */

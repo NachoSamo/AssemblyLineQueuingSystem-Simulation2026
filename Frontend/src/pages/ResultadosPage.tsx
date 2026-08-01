@@ -1,4 +1,4 @@
-import { RotateCcw } from 'lucide-react'
+import { RotateCcw, Table2 } from 'lucide-react'
 import TarjetaNOptimo from '../components/resultados/TarjetaNOptimo'
 import ResumenParametros from '../components/resultados/ResumenParametros'
 import GraficoUtilizacion from '../components/resultados/GraficoUtilizacion'
@@ -13,6 +13,7 @@ interface ResultadosPageProps {
   resultado: SimulacionResponse
   onNuevaSimulacion: () => void
   onAmpliarRango: () => void
+  onVerVectorEstado: () => void
 }
 
 /**
@@ -24,6 +25,7 @@ export default function ResultadosPage({
   resultado,
   onNuevaSimulacion,
   onAmpliarRango,
+  onVerVectorEstado,
 }: ResultadosPageProps) {
   return (
     <div className="space-y-8">
@@ -31,15 +33,20 @@ export default function ResultadosPage({
 
       <ResumenParametros parametros={resultado.parametros} />
 
+      {/* Producción primero: es la magnitud que el enunciado pide maximizar
+          (Dominio.md §2). La utilización va después, y explica por qué la
+          producción se aplana donde se aplana. */}
       <div className="space-y-6">
+        <GraficoProduccion
+          resultadosPorN={resultado.resultados_por_n}
+          nOptimo={resultado.n_optimo}
+          criterio={resultado.parametros.criterio}
+        />
         <GraficoUtilizacion
           resultadosPorN={resultado.resultados_por_n}
           umbralUtilizacion={resultado.parametros.umbral_utilizacion}
           nOptimo={resultado.n_optimo}
-        />
-        <GraficoProduccion
-          resultadosPorN={resultado.resultados_por_n}
-          nOptimo={resultado.n_optimo}
+          criterio={resultado.parametros.criterio}
         />
       </div>
 
@@ -55,7 +62,16 @@ export default function ResultadosPage({
         </Acordeon>
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex flex-wrap justify-end gap-3">
+        {/* Detalle evento por evento: pantalla aparte porque la tabla es mucho
+            más ancha que el resto de la interfaz (Frontend.md §8). */}
+        <Boton
+          variante="secundario"
+          onClick={onVerVectorEstado}
+          icono={<Table2 size={16} aria-hidden="true" />}
+        >
+          Ver vector de estado
+        </Boton>
         <Boton
           variante="secundario"
           onClick={onNuevaSimulacion}

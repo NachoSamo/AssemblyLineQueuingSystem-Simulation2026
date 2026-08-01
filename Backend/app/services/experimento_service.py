@@ -1,12 +1,14 @@
 """Diseño experimental: barrido de N, promedios entre réplicas y N óptimo.
 
 Qué hace: recorre `n_minimo..n_maximo`, ejecuta R réplicas por cada N llamando al motor,
-agrega los resultados con NumPy (promedios y desvíos), determina el N óptimo según el
-umbral y orquesta la medición de tiempos delegando en `metricas_computo`.
-Corresponde a: `Dominio.md` §9 (diseño experimental), §10 (criterio del N óptimo),
+agrega los resultados con NumPy (promedios y desvíos), arma la conclusión delegando la
+decisión en `criterios` y orquesta la medición de tiempos delegando en `metricas_computo`.
+Corresponde a: `Dominio.md` §9 (diseño experimental), §10 (criterios del N óptimo),
 §10.1 (relación utilización–producción) y §11 (flujo lógico). También `Backend.md` §5.
-Qué NO le corresponde: no implementa la lógica de eventos (eso es del motor), no valida
-la entrada (eso es de `models/request.py`) y no sabe nada de HTTP.
+Qué NO le corresponde: no implementa la lógica de eventos (eso es del motor), **no decide
+cuál es el N óptimo** (eso es de `criterios.py`), no valida la entrada (eso es de
+`models/request.py`) y no sabe nada de HTTP. Tampoco pide la traza del vector de estado:
+el barrido corre sin trazar.
 
 Unidades: el tiempo simulado va en minutos; el tiempo real de cómputo, en milisegundos.
 Devuelve un diccionario plano que respeta exactamente el contrato de `Backend.md` §3,
@@ -15,6 +17,7 @@ para que el controller solo tenga que envolverlo en el modelo Pydantic.
 
 from __future__ import annotations
 
+import math
 import time
 from typing import Any
 
@@ -22,6 +25,7 @@ import numpy as np
 
 from ..utils import constantes
 from ..utils.generadores import crear_semilla_raiz, derivar_flujos_de_replica, resolver_semilla
+from .criterios import MAXIMA_PRODUCCION, determinar_n_optimo, ganancia_del_siguiente
 from .metricas_computo import Cronometro, MedidorRecursos
 from .motor_simulacion import ejecutar_replica
 
@@ -32,6 +36,8 @@ def ejecutar_experimento(
     replicas: int,
     umbral_utilizacion: float,
     semilla: int | None = None,
+    criterio: str = MAXIMA_PRODUCCION,
+    ganancia_minima: float = 1.0,
 ) -> dict[str, Any]:
     """Corre el experimento completo y devuelve todos los resultados.
 
@@ -42,17 +48,21 @@ def ejecutar_experimento(
                 resultado = motor.ejecutar_replica(N, flujos de esa réplica)
             Utilización(N) = promedio(tiempo_horno_ocupado / 480)
             Producción(N)  = promedio(piezas_terminadas)
-        n_optimo = mínimo N con Utilización(N) >= umbral
+        n_optimo = el que decida `criterios.determinar_n_optimo`
 
     :param n_minimo: primer N del barrido (>= 1).
     :param n_maximo: último N del barrido (>= n_minimo).
     :param replicas: R, jornadas simuladas por cada N. **El mismo R para todos los N**:
         es lo que hace comparables las estimaciones entre valores de N (§9).
     :param umbral_utilizacion: fracción (0 a 1) a partir de la cual se considera saturado
-        el horno (§10).
+        el horno. Solo se usa con el criterio `umbral_manual` (§10).
     :param semilla: semilla de la corrida, o `None` para generar una.
+    :param criterio: cuál de los tres criterios de `criterios.py` decide el N óptimo.
+    :param ganancia_minima: piezas que tiene que aportar el N siguiente para que valga la
+        pena sumarlo. Solo se usa con el criterio `maxima_produccion`.
     :return: diccionario con las claves `parametros`, `resultados_por_n`, `n_optimo`,
-        `alcanzo_umbral`, `utilizacion_n_optimo`, `piezas_n_optimo` y
+        `alcanzo_criterio`, `utilizacion_n_optimo`, `piezas_n_optimo`,
+        `piezas_n_optimo_truncadas`, `ganancia_n_optimo`, `utilizacion_maxima_rango` y
         `estadisticas_computo`, según el contrato de `Backend.md` §3.
     """
     semilla_efectiva = resolver_semilla(semilla)
@@ -105,15 +115,19 @@ def ejecutar_experimento(
 
     medidor.finalizar()
 
-    n_optimo, utilizacion_n_optimo, piezas_n_optimo = _determinar_n_optimo(
-        resultados_por_n, umbral_utilizacion
+    # La decisión no vive acá: este servicio corre el experimento, `criterios` lo interpreta.
+    n_optimo = determinar_n_optimo(
+        resultados_por_n, criterio, umbral_utilizacion, ganancia_minima
     )
+    optimo = next((f for f in resultados_por_n if f["n"] == n_optimo), None)
 
     return {
         "parametros": {
             "n_minimo": n_minimo,
             "n_maximo": n_maximo,
             "replicas": replicas,
+            "criterio": criterio,
+            "ganancia_minima": ganancia_minima,
             "umbral_utilizacion": umbral_utilizacion,
             "semilla": semilla_efectiva,
             "duracion_jornada": constantes.DURACION_JORNADA,
@@ -128,9 +142,22 @@ def ejecutar_experimento(
         },
         "resultados_por_n": resultados_por_n,
         "n_optimo": n_optimo,
-        "alcanzo_umbral": n_optimo is not None,
-        "utilizacion_n_optimo": utilizacion_n_optimo,
-        "piezas_n_optimo": piezas_n_optimo,
+        "alcanzo_criterio": n_optimo is not None,
+        "utilizacion_n_optimo": optimo["utilizacion_promedio"] if optimo else None,
+        "piezas_n_optimo": optimo["piezas_promedio"] if optimo else None,
+        # La producción REAL: la pieza que quedó a medio cocinar en el minuto 480 no se
+        # entrega, así que 56,33 de promedio son 56 piezas completas (§8).
+        "piezas_n_optimo_truncadas": (
+            int(math.floor(optimo["piezas_promedio"])) if optimo else None
+        ),
+        # Lo que justifica el corte en la conclusión: "pasar de 6 a 7 suma 0,00 piezas".
+        # Es `None` si el N óptimo es el último del rango: no hay sucesor con qué comparar.
+        "ganancia_n_optimo": (
+            ganancia_del_siguiente(resultados_por_n, n_optimo) if n_optimo is not None else None
+        ),
+        "utilizacion_maxima_rango": max(
+            f["utilizacion_promedio"] for f in resultados_por_n
+        ),
         "estadisticas_computo": {
             "tiempo_total_ms": crono_total.duracion_ms,
             "tiempo_por_n": tiempo_por_n,
@@ -156,31 +183,3 @@ def _desvio_muestral(valores: np.ndarray) -> float:
     if valores.size < 2:
         return 0.0
     return float(valores.std(ddof=1))
-
-
-def _determinar_n_optimo(
-    resultados_por_n: list[dict[str, Any]], umbral_utilizacion: float
-) -> tuple[int | None, float | None, float | None]:
-    """Devuelve el N óptimo y sus valores asociados (`Dominio.md` §10).
-
-    N óptimo es el **mínimo** N cuya utilización promedio alcanza el umbral, no el que la
-    maximiza: todos los N grandes rondan el 100 %, y el objetivo del §2 es quedarse con el
-    más chico que ya logra la producción máxima. Como `resultados_por_n` viene en orden
-    ascendente de N, alcanza con devolver el primero que cruza.
-
-    Si ninguno cruza, se devuelve `(None, None, None)`: el frontend muestra el aviso de
-    ampliar el rango (§10.2) en vez de presentar el mejor disponible como si fuera la
-    respuesta.
-
-    :param resultados_por_n: resultados agregados, en orden ascendente de N.
-    :param umbral_utilizacion: fracción (0 a 1) que define la saturación del horno.
-    :return: tupla `(n_optimo, utilizacion_n_optimo, piezas_n_optimo)`.
-    """
-    for resultado in resultados_por_n:
-        if resultado["utilizacion_promedio"] >= umbral_utilizacion:
-            return (
-                resultado["n"],
-                resultado["utilizacion_promedio"],
-                resultado["piezas_promedio"],
-            )
-    return None, None, None
