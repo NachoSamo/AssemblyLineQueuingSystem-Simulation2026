@@ -32,25 +32,25 @@ export const CRITERIOS: {
   etiqueta: string
   descripcion: string
 }[] = [
-  {
-    valor: 'maxima_produccion',
-    etiqueta: 'Máxima producción de piezas',
-    descripcion:
-      'El mínimo N a partir del cual sumar otro ensamblador ya no aumenta la producción. Es la definición del enunciado y no depende de ningún umbral.',
-  },
-  {
-    valor: 'capacidad_horno',
-    etiqueta: 'Usar la máxima capacidad del horno',
-    descripcion:
-      'El mínimo N que lleva el horno a su techo físico (~94,8 %). Es lo máximo que puede dar este horno, porque arranca vacío y pierde el primer ensamble.',
-  },
-  {
-    valor: 'umbral_manual',
-    etiqueta: 'Umbral de utilización manual',
-    descripcion:
-      'El mínimo N cuya utilización supera el umbral que indiques. Sirve para explorar a mano qué pasa con distintas exigencias.',
-  },
-]
+    {
+      valor: 'maxima_produccion',
+      etiqueta: 'Máxima producción de piezas',
+      descripcion:
+        'El mínimo N a partir del cual sumar otro ensamblador ya no aumenta la producción. Es la definición del enunciado y no depende de ningún umbral.',
+    },
+    {
+      valor: 'capacidad_horno',
+      etiqueta: 'Usar la máxima capacidad del horno',
+      descripcion:
+        'El mínimo N que lleva el horno a su techo físico (~94,8 %). Es lo máximo que puede dar este horno, el mismo arranca vacio en la primera fila de la simulacion, se podria considerar un pseudo warm up (pero no porque es un sistema terminante)',
+    },
+    {
+      valor: 'umbral_manual',
+      etiqueta: 'Umbral de utilización manual',
+      descripcion:
+        'El mínimo N cuya utilización supera el umbral que indiques. Sirve para explorar a mano qué pasa con distintas exigencias.',
+    },
+  ]
 
 /** Nombre corto del criterio, para tags y resúmenes. */
 export const NOMBRE_CRITERIO: Record<CriterioNOptimo, string> = {

@@ -1,19 +1,13 @@
-"""Motor de simulación de eventos discretos: **una** réplica de una jornada.
+"""Motor de simulación de eventos discretos: una réplica de una jornada.
 
 Qué hace: ejecuta una jornada completa de 480 minutos para un N dado, con el bucle
 clásico de siguiente-evento (reloj + lista de eventos futuros). Devuelve el tiempo de
 horno ocupado y las piezas terminadas de esa réplica, y opcionalmente registra el
-**vector de estado** fila por fila.
-Corresponde a: `Dominio.md` §5 (modelo conceptual), §6 (los dos eventos), §7 (variables
-de control), §8 (fin de la simulación) y §11 (flujo lógico).
+vector de estado fila por fila.
+
 Qué NO le corresponde: no sabe qué es FastAPI, ni Pydantic, ni JSON, ni HTTP. No recorre
 varios N ni varias réplicas (eso es de `experimento_service`), no promedia nada y no mide
 tiempos de cómputo. Tampoco pagina ni formatea el vector de estado: lo entrega crudo.
-
-Regla de oro (`Backend.md` §4.2): este módulo debe poder ejecutarse desde un script suelto
-de cinco líneas para trazar una réplica y compararla contra el vector de estado de la
-planilla `Ejercicio 135 Final Planteo.ods`. Por eso solo importa NumPy y la biblioteca
-estándar, y las filas de la traza son dataclasses puras, no modelos Pydantic.
 
 Unidades: todo el tiempo de este módulo es **tiempo simulado, en minutos**.
 """
@@ -33,21 +27,19 @@ from ..utils.constantes import (
 )
 from ..utils.generadores import FlujoAleatorio, uniforme_con_rnd
 
+"""Definimos los eventos del sistema"""
 #: Marca de "sin evento programado" en la lista de eventos futuros.
 SIN_EVENTO: float = math.inf
 
-# --- Etiquetas del vector de estado (`Dominio.md` §5, §6) ----------------------------
-# Son los textos que se muestran tal cual en la tabla, así que van en español y con tildes.
-
-#: Estados posibles de un ensamblador (§5.1).
+#: Estados posibles de un ensamblador.
 ENSAMBLADOR_ENSAMBLANDO: str = "Ensamblando"
 ENSAMBLADOR_ESPERANDO: str = "Esperando"
 
-#: Estados posibles del horno (§5.2).
+#: Estados posibles del horno.
 HORNO_LIBRE: str = "Libre"
 HORNO_OCUPADO: str = "Ocupado"
 
-#: Estados posibles de una pieza a lo largo de su vida (§5.3).
+#: Estados posibles de una pieza a lo largo de su vida.
 PIEZA_ENSAMBLANDOSE: str = "Ensamblándose"
 PIEZA_EN_COLA: str = "En cola"
 PIEZA_EN_COCCION: str = "En cocción"
@@ -71,7 +63,7 @@ class ColumnaEnsamblador:
     :param rnd: número aleatorio sorteado en esta fila, o `None`.
     :param tiempo: tiempo de ensamble que salió de ese RND, en minutos, o `None`.
     :param fin_ensamble: minuto en que termina el ensamble en curso, o `None` si espera.
-    :param estado: `"Ensamblando"` o `"Esperando"` (§5.1).
+    :param estado: `"Ensamblando"` o `"Esperando"`
     """
 
     rnd: float | None
@@ -138,36 +130,33 @@ def ejecutar_replica(
 ) -> ResultadoReplica:
     """Simula una jornada completa para un número fijo de ensambladores.
 
-    Bucle de siguiente-evento fiel a `Dominio.md` §11: se toma el evento futuro de menor
-    tiempo, se avanza el reloj hasta él y se aplica la lógica de §6.1 o §6.2 según el tipo.
-
     :param n_ensambladores: N, cantidad de ensambladores que comparten el horno (>= 1).
     :param flujo_ensamble: flujo de RND del que salen los tiempos de ensamble.
     :param flujo_coccion: flujo de RND del que salen los tiempos de cocción.
-        Debe ser **independiente** del anterior (`Dominio.md` §4).
+        Debe ser **independiente** del anterior.
     :param duracion_jornada: minuto de corte. Es un dato fijo del enunciado (480) y está
         acá solo para no repetir la constante dentro del bucle; no es un parámetro de la API.
     :param traza: si se pasa una lista, se le agrega una `FilaVectorEstado` por cada evento
         (más la inicialización y el corte). Si es `None`, no se registra nada.
         **La traza es un observador puro**: no altera el orden ni la cantidad de RND que se
         consumen, así que una réplica trazada da exactamente el mismo resultado que la misma
-        réplica sin trazar (`Backend.md` §4.8).
+        réplica sin trazar.
     :return: `ResultadoReplica` con el tiempo de horno ocupado (minutos) y las piezas terminadas.
     """
-    # --- Inicialización (§11, §4.7 de Backend.md): el sistema arranca vacío -------------
+    # --- Inicialización: el sistema arranca vacío -------------
     reloj: float = 0.0
     horno_ocupado: bool = False
-    cola: deque[int] = deque()  # IDs de ensambladores cuya pieza espera turno (FIFO, §4.3)
+    cola: deque[int] = deque() 
     tiempo_horno_ocupado: float = 0.0
     piezas_terminadas: int = 0
 
     # Seguimiento de las piezas: cada ensamblador tiene una pieza en mano, y cada pieza
     # recorre Ensamblándose -> (En cola) -> En cocción -> Terminada. Es información que la
-    # lógica de eventos no necesita, pero que la planilla muestra columna por columna (§5.3).
+    # lógica de eventos no necesita, pero que la planilla muestra columna por columna.
     estados_piezas: list[str] = [PIEZA_ENSAMBLANDOSE] * n_ensambladores
     pieza_de_ensamblador: list[int] = list(range(n_ensambladores))
 
-    # Lista de eventos futuros (§7): un Fin Ensamble por ensamblador que esté ensamblando...
+    # Lista de eventos futuros: un Fin Ensamble por ensamblador que esté ensamblando...
     fin_ensamble: list[float] = []
     rnd_ensamble_fila: list[float | None] = []
     tiempo_ensamble_fila: list[float | None] = []
@@ -225,7 +214,7 @@ def ejecutar_replica(
         proximo_ensamble = min(fin_ensamble)
         proximo_evento = min(proximo_ensamble, fin_coccion)
 
-        # --- Corte de la jornada (§8) --------------------------------------------------
+        # --- Corte de la jornada  --------------------------------------------------
         # La jornada corta estrictamente en el minuto 480: el evento que caiga en 480 o
         # después no se ejecuta, y la pieza asociada no se cuenta.
         if proximo_evento >= duracion_jornada:

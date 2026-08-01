@@ -51,7 +51,7 @@ MENSAJE_ERROR_INESPERADO: str = "Ocurrió un error al ejecutar la simulación."
     summary="Ejecuta la corrida completa",
     description=(
         "Endpoint síncrono: corre las R réplicas de cada N del rango y devuelve todos los "
-        "resultados en una sola respuesta. No hay streaming ni polling."
+        "resultados en una sola respuesta."
     ),
     responses={
         422: {"model": ErrorResponse, "description": "Parámetros inválidos"},

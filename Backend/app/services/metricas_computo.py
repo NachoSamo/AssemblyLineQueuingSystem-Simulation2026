@@ -2,7 +2,6 @@
 
 Qué hace: cronometra bloques de ejecución y mide el consumo de recursos del proceso
 (memoria RSS y CPU) con `psutil`.
-Corresponde a: `Dominio.md` §12 (estadísticas de cómputo) y `Backend.md` §6.
 Qué NO le corresponde: no interpreta ni formatea los números para el usuario — el backend
 devuelve magnitudes crudas y el frontend arma las frases legibles. Tampoco sabe nada de la
 lógica de eventos ni del diseño experimental.
@@ -12,7 +11,7 @@ la memoria en **megabytes**; la CPU en porcentaje (0 a 100, puede superar 100 en
 con varios núcleos si el proceso usa más de uno).
 
 Nota de método: se usa `time.perf_counter()` porque `time.time()` no tiene la resolución
-necesaria — una réplica tarda fracciones de milisegundo (`Backend.md` §6).
+necesaria — una réplica tarda fracciones de milisegundo.
 """
 
 from __future__ import annotations
@@ -37,7 +36,7 @@ class Cronometro:
         crono.duracion_ms
 
     Se usa alrededor de cada réplica y alrededor de cada N, nunca dentro del bucle de
-    eventos: la medición no debe distorsionar lo medido (`Backend.md` §6).
+    eventos: la medición no debe distorsionar lo medido.
     """
 
     __slots__ = ("_inicio", "duracion_ms")
@@ -61,12 +60,11 @@ class Cronometro:
 
 
 class MedidorRecursos:
-    """Mide memoria y CPU del proceso durante la corrida (`Dominio.md` §12).
+    """Mide memoria y CPU del proceso durante la corrida.
 
     Sobre la CPU: `psutil.Process.cpu_percent()` necesita un intervalo de referencia.
     La primera llamada establece la línea de base y devuelve `0.0`; la lectura útil es la
-    segunda, al terminar la corrida (`Backend.md` §6). Por eso el flujo es
-    `iniciar()` → (corrida) → `finalizar()`.
+    segunda, al terminar la corrida. Por eso el flujo es `iniciar()` → (corrida) → `finalizar()`.
 
     Sobre la memoria: se registra el máximo RSS observado. Se muestrea en puntos discretos
     (al inicio, después de cada N y al final) en vez de con un hilo aparte, para no agregar

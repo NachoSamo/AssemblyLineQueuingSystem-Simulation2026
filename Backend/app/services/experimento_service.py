@@ -1,18 +1,13 @@
-"""Diseño experimental: barrido de N, promedios entre réplicas y N óptimo.
-
-Qué hace: recorre `n_minimo..n_maximo`, ejecuta R réplicas por cada N llamando al motor,
+""" Recorre `n_minimo..n_maximo`, ejecuta R réplicas por cada N llamando al motor,
 agrega los resultados con NumPy (promedios y desvíos), arma la conclusión delegando la
 decisión en `criterios` y orquesta la medición de tiempos delegando en `metricas_computo`.
-Corresponde a: `Dominio.md` §9 (diseño experimental), §10 (criterios del N óptimo),
-§10.1 (relación utilización–producción) y §11 (flujo lógico). También `Backend.md` §5.
-Qué NO le corresponde: no implementa la lógica de eventos (eso es del motor), **no decide
-cuál es el N óptimo** (eso es de `criterios.py`), no valida la entrada (eso es de
+
+Que NO le corresponde: no implementa la lógica de eventos (eso es del motor), no decide
+cuál es el N óptimo (eso es de `criterios.py`), no valida la entrada (eso es de
 `models/request.py`) y no sabe nada de HTTP. Tampoco pide la traza del vector de estado:
 el barrido corre sin trazar.
 
 Unidades: el tiempo simulado va en minutos; el tiempo real de cómputo, en milisegundos.
-Devuelve un diccionario plano que respeta exactamente el contrato de `Backend.md` §3,
-para que el controller solo tenga que envolverlo en el modelo Pydantic.
 """
 
 from __future__ import annotations
@@ -78,6 +73,7 @@ def ejecutar_experimento(
 
     with Cronometro() as crono_total:
         for n in range(n_minimo, n_maximo + 1):
+            #crea arreglos para guardar los resultados de cada replica de N
             tiempos_horno = np.empty(replicas, dtype=np.float64)
             piezas = np.empty(replicas, dtype=np.float64)
             acumulado_n_ms: float = 0.0
@@ -90,9 +86,11 @@ def ejecutar_experimento(
 
                 # Se cronometra alrededor de la réplica, nunca dentro del bucle de eventos.
                 inicio = time.perf_counter()
+                #Linea clave ejecuta la simulacion de cada replica de N
                 resultado = ejecutar_replica(n, flujo_ensamble, flujo_coccion)
                 acumulado_n_ms += (time.perf_counter() - inicio) * 1000.0
 
+                #Recoleccion de datos de cada simulacion dentro de una lista 
                 tiempos_horno[indice] = resultado.tiempo_horno_ocupado
                 piezas[indice] = resultado.piezas_terminadas
 

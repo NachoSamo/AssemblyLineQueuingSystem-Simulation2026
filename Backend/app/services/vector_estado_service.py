@@ -3,12 +3,9 @@
 Qué hace: dada la semilla de una corrida ya ejecutada y el par (N, réplica) que el usuario
 quiere inspeccionar, vuelve a correr **esa sola** réplica pidiéndole al motor que registre la
 traza, y devuelve las filas junto con los totales que el frontend necesita para paginar.
-Corresponde a: `Backend.md` §3.2 (contrato de `/api/simulaciones/vector-estado`) y §4.8
-(la traza como observador puro).
-Qué NO le corresponde: no barre N, no promedia, no calcula el N óptimo (eso es de
-`experimento_service`), no pagina (eso lo hace el frontend) y no sabe nada de HTTP.
+Qué NO le corresponde: no barre N, no promedia, no calcula el N óptimo, no pagina y no sabe nada de HTTP.
 
-Por qué recalcula en vez de guardar
+Por qué recalcula en vez de guardar?
 -----------------------------------
 Las semillas se derivan de forma determinística por par (N, réplica) con
 `derivar_flujos_de_replica(raiz, indice_global)`. Con la misma semilla, el mismo `n_minimo` y
@@ -72,9 +69,9 @@ def _a_diccionario(fila: FilaVectorEstado, replica: int) -> dict[str, Any]:
     """Convierte una fila del motor al diccionario plano del contrato.
 
     La traducción vive acá, y no en el motor, porque el motor no debe conocer el contrato de
-    la API (`Claude.md` §6, regla 4): sus filas son dataclasses puras. El motor tampoco sabe
-    qué número de réplica está corriendo — es el servicio el que lo agrega, para que cada fila
-    sea autodescriptiva y se pueda mostrar la columna R que pidió el enunciado del TP.
+    El motor tampoco sabe qué número de réplica está corriendo 
+    es el servicio el que lo agrega, para que cada fila sea autodescriptiva y se pueda mostrar la columna R 
+    que pidió el enunciado del TP.
 
     :param fila: fila tal como la produjo el motor.
     :param replica: número de réplica al que pertenece la fila (base 1).

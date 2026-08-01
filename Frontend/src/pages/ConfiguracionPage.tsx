@@ -190,11 +190,6 @@ export default function ConfiguracionPage({
         <h2 className="text-base font-semibold text-base-900">
           Criterio para elegir el N óptimo
         </h2>
-        <p className="mt-1 text-sm text-base-500">
-          Qué se considera "óptimo". Con los parámetros del enunciado los tres criterios
-          coinciden, lo que es una buena señal: se llega a la misma respuesta por caminos
-          distintos.
-        </p>
         <div className="mt-4">
           <CampoRadio
             nombre="criterio"
